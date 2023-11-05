@@ -1,4 +1,4 @@
-use std::sync::{ Arc, atomic::{ AtomicBool, Ordering} };
+use std::{ str, thread::sleep, time::Duration, sync::{ Arc, atomic::{ AtomicBool, Ordering } } };
 use signal_hook::{ flag, consts::TERM_SIGNALS };
 
 fn main() -> Result<(), std::io::Error>{
@@ -13,68 +13,77 @@ fn main() -> Result<(), std::io::Error>{
     // Clear screen and hide cursor
     print!("\x1b[2J\x1b[?25l");
 
-    let mut t : f64 = 0.0;
+    let heart_size = 0.3;
+    let heart_beat_size = 0.03;
+
+    let mut tick : f64 = 0.0;
     // loop until interupt
     while !term_now.load(Ordering::Relaxed) {
-      let mut zb = [0.0; 100 * 40];
-      let mut maxz = 0.0;
-      let (c, s) = (t.cos(), t.sin());
+        let mut z_axis_buffer = [0.0; 100 * 40];
+        let mut maximum_z_axis = 0.0;
+        let (cosine, sine) = (tick.cos(), tick.sin());
 
-      for y in -50..50 {
-        let fy = f64::from(y) / 100.0;
+        for y_axis in -50..50 {
+            let y_axis_fraction = f64::from(y_axis) / 100.0;
 
-        // Add beating effect
-        let r = 0.4 + 0.05 * (0.5 + 0.5 * (t * 6.0 + fy * 2.0).sin()).powi(8);
+            // Add beating effect
+            let beat = heart_size + heart_beat_size * (0.5 + 0.5 * (tick * 6.0 + y_axis_fraction * 2.0).sin()).powi(8);
 
-        for x in -50..50 {
-          let fx = f64::from(x) / 100.0;
+            for x_axis in -50..50 {
+                let x_axis_fraction = f64::from(x_axis) / 100.0;
 
-          // Heart formula
-          let z = (-fx * fx - (1.2 * fy - fx.abs() * 2.0 / 3.0).powi(2) + r * r).sqrt() / (2.0 - fy);
-          if z < 0.0 {
-            continue;
-          }
+                let y_position = 1.2 * y_axis_fraction - x_axis_fraction.abs() * 2.0 / 3.0;
+                let x_position = -x_axis_fraction * x_axis_fraction - y_position.powi(2) + beat * beat;
 
-          let mut tz = -z;
-          while tz < z {
-            // Rotate
-            let nx = fx * c - tz * s;
-            let nz = fx * s + tz * c;
-            // Add perspective 
-            let p = 1.0 + nz / 2.0;
-            // Convert to screen coordinates
-            let vx = (( nx * p + 0.5) * 80.0 + 10.0).round();
-            let vy = ((-fy * p + 0.5) * 39.0 + 2.0).round();
+                // Heart formula
+                let z_value = x_position.sqrt() / (2.0 - y_axis_fraction);
 
-            let idx = (vx + 100.0 * vy) as usize;
-            if zb[idx] <= nz {
-              zb[idx] = nz;
-              if nz > maxz {
-                maxz = nz;
-              }
+                if z_value < 0.0 {
+                  continue;
+                }
+
+                let mut z_tick = -z_value;
+                while z_tick < z_value {
+                    // Rotate
+                    let x_rotate = x_axis_fraction * cosine - z_tick * sine;
+                    let z_rotate = x_axis_fraction * sine   + z_tick * cosine;
+
+                    // Add perspective 
+                    let p = 1.0 + z_rotate / 2.0;
+
+                    // Convert to screen coordinates
+                    let x_window = (( x_rotate * p + 0.5) * 70.0 + 10.0).round();
+                    let y_window = ((-y_axis_fraction * p + 0.5) * 38.0 + 2.0).round();
+
+                    let idx = (x_window + 100.0 * y_window) as usize;
+                    if z_axis_buffer[idx] <= z_rotate {
+                        z_axis_buffer[idx] = z_rotate;
+                        if z_rotate > maximum_z_axis {
+                            maximum_z_axis = z_rotate;
+                        }
+                    }
+                    z_tick += z_value / 6.0;
+                }
             }
-            tz+= z / 6.0;
-          }
         }
-      }
 
-      let mut d = [0u8; 100 * 40];
-      for (i, z) in zb.iter().enumerate() {
-        d[i] = if i % 100 == 0 {
-            10
-          } else {
-            let str = " .,-~:;=!*#$@@".as_bytes();
-            str[(z / maxz * 13.0).round() as usize]
-          };
-      };
-      print!("\x1b[H{}", std::str::from_utf8(&d).unwrap());
+        let mut window_line = [0u8; 100 * 40];
+        for (index, z_axis) in z_axis_buffer.iter().enumerate() {
+          window_line[index] = if index % 100 == 0 {
+              10
+            } else {
+              let str = " .,-~:;=!*#$&@".as_bytes();
+              str[(z_axis / maximum_z_axis * 13.0).round() as usize]
+            };
+        };
+        print!("\x1b[H{}", str::from_utf8(&window_line).unwrap());
 
-      t+= 0.004;
-      std::thread::sleep(std::time::Duration::from_millis(3));
+        tick += 0.004;
+        sleep(Duration::from_millis(3));
     }
 
     // show cursor again
-    print!("\n\x1b[?25h");
+    print!("\n\x1b[?25h Tick: {}\n", tick);
 
     Ok(())
 }
